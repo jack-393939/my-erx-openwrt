@@ -1,7 +1,7 @@
 name: OpenWrt Builder
 
 on:
-  workflow_dispatch:  # 手动触发（网页 Run workflow）
+  workflow_dispatch:
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
@@ -21,18 +21,16 @@ jobs:
 
       - name: Initialization environment
         run: |
-          sudo apt-get update -yq
-          sudo apt-get install -yq --no-install-recommends \
-            build-essential clang flex bison g++ gawk \
-            gcc-multilib g++-multilib gettext git \
-            libncurses-dev libssl-dev python3-setuptools \
-            rsync subversion unzip zlib1g-dev wget curl \
-            cmake ninja-build pkgconf texinfo help2man \
-            libtool libtool-bin device-tree-compiler bc \
-            ccache ecj fastjar python3-distutils python3-dev \
-            swig xsltproc file gperf haveged patch quilt \
-            libglib2.0-dev libelf-dev libmpc-dev libmpfr-dev \
-            libgmp3-dev libzstd-dev liblzma-dev
+          sudo rm -rf /var/lib/apt/lists/*  # 清空旧 cache，避免冲突
+          sudo apt-get update -yq --fix-missing
+          sudo apt-get install -yq --no-install-recommends --fix-broken \
+            build-essential subversion git-core libncurses-dev zlib1g-dev \
+            gawk flex quilt libssl-dev xsltproc libxml-parser-perl unzip \
+            python3 python3-distutils rsync wget curl file bc time \
+            gettext pkg-config libelf-dev libglib2.0-dev \
+            libgmp3-dev libmpc-dev libmpfr-dev \
+            patch bzip2 tar xz-utils make gcc g++ \
+            ccache
 
       - name: Clone source code
         run: |
@@ -44,14 +42,14 @@ jobs:
           if [ -f ../feeds.conf.default ]; then mv ../feeds.conf.default feeds.conf.default; fi
           if [ -f ../diy-part1.sh ]; then
             chmod +x ../diy-part1.sh
-            ../diy-part1.sh || true
+            ../diy-part1.sh || echo "diy-part1 failed, continuing"
           fi
 
       - name: Update and install feeds
         run: |
           cd openwrt
-          ./scripts/feeds update -a || true
-          ./scripts/feeds install -a || true
+          ./scripts/feeds update -a || echo "feeds update failed, continuing"
+          ./scripts/feeds install -a || echo "feeds install failed, continuing"
 
       - name: Load custom configuration and diy-part2
         run: |
@@ -60,20 +58,20 @@ jobs:
           if [ -d ../files ]; then mv ../files files; fi
           if [ -f ../diy-part2.sh ]; then
             chmod +x ../diy-part2.sh
-            ../diy-part2.sh || true
+            ../diy-part2.sh || echo "diy-part2 failed, continuing"
           fi
-          make defconfig || true
+          make defconfig || echo "defconfig failed, continuing"
 
       - name: Download packages
         run: |
           cd openwrt
-          make download -j8 || make download -j1 || true
+          make download -j8 || make download -j1 || echo "download failed"
 
       - name: Compile firmware
         run: |
           cd openwrt
-          echo "Compiling with $(nproc) threads"
-          make -j$(nproc) V=s || make -j1 V=s || echo "Compile failed, check logs"
+          echo "Starting compilation with $(nproc) threads"
+          make -j$(nproc) V=s || make -j1 V=s || echo "Compilation failed"
 
       - name: Upload firmware artifacts (if exists)
         if: always()
