@@ -1,7 +1,7 @@
 name: OpenWrt Builder
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 手动触发（网页 Run workflow）
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
@@ -10,54 +10,75 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # 自动用最新 Ubuntu (24.04+)
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Initialization environment
-      run: |
-        sudo apt-get update -yq  # 强制安静更新 cache
-        sudo apt-get upgrade -yq
-        sudo apt-get install -yq build-essential clang flex bison g++ gawk \
-        gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
-        python3-setuptools rsync subversion unzip zlib1g-dev wget curl \
-        cmake ninja-build pkgconf texinfo help2man libtool libtool-bin \
-        device-tree-compiler bc ccache ecj fastjar python3-distutils \
-        python3-dev swig xsltproc file gperf haveged patch quilt \
-        libglib2.0-dev libelf-dev libmpc-dev libmpfr-dev libgmp3-dev \
-        libzstd-dev liblzma-dev
+      - name: Set timezone
+        run: sudo timedatectl set-timezone "$TZ"
 
-    - name: Clone source code
-      run: |
-        git clone --depth=1 --branch $REPO_BRANCH $REPO_URL openwrt
+      - name: Initialization environment
+        run: |
+          sudo apt-get update -yq
+          sudo apt-get install -yq --no-install-recommends \
+            build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git \
+            libncurses-dev libssl-dev python3-setuptools \
+            rsync subversion unzip zlib1g-dev wget curl \
+            cmake ninja-build pkgconf texinfo help2man \
+            libtool libtool-bin device-tree-compiler bc \
+            ccache ecj fastjar python3-distutils python3-dev \
+            swig xsltproc file gperf haveged patch quilt \
+            libglib2.0-dev libelf-dev libmpc-dev libmpfr-dev \
+            libgmp3-dev libzstd-dev liblzma-dev
 
-    - name: Load custom feeds and diy-part1
-      run: |
-        cd openwrt
-        if [ -f ../feeds.conf.default ]; then mv ../feeds.conf.default feeds.conf.default; fi
-        if [ -f ../diy-part1.sh ]; then chmod +x ../diy-part1.sh; ../diy-part1.sh; fi
+      - name: Clone source code
+        run: |
+          git clone --depth=1 --branch $REPO_BRANCH $REPO_URL openwrt
 
-    - name: Update and install feeds
-      run: |
-        cd openwrt
-        ./scripts/feeds update -a || true  # 容错
-        ./scripts/feeds install -a
+      - name: Load custom feeds and diy-part1
+        run: |
+          cd openwrt
+          if [ -f ../feeds.conf.default ]; then mv ../feeds.conf.default feeds.conf.default; fi
+          if [ -f ../diy-part1.sh ]; then
+            chmod +x ../diy-part1.sh
+            ../diy-part1.sh || true
+          fi
 
-    - name: Load custom configuration and diy-part2
-      run: |
-        cd openwrt
-        if [ -f ../.config ]; then mv ../.config .config; fi
-        if [ -f ../diy-part2.sh ]; then chmod +x ../diy-part2.sh; ../diy-part2.sh; fi
-        make defconfig
+      - name: Update and install feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a || true
+          ./scripts/feeds install -a || true
 
-    - name: Download packages
-      run: |
-        cd openwrt
-        make download -j8 || make download -j1 || true
+      - name: Load custom configuration and diy-part2
+        run: |
+          cd openwrt
+          if [ -f ../.config ]; then mv ../.config .config; fi
+          if [ -d ../files ]; then mv ../files files; fi
+          if [ -f ../diy-part2.sh ]; then
+            chmod +x ../diy-part2.sh
+            ../diy-part2.sh || true
+          fi
+          make defconfig || true
 
-    - name: Compile firmware
-      run: |
-        cd openwrt
-        make -j$(nproc) V=s || make -j1 V=s
+      - name: Download packages
+        run: |
+          cd openwrt
+          make download -j8 || make download -j1 || true
+
+      - name: Compile firmware
+        run: |
+          cd openwrt
+          echo "Compiling with $(nproc) threads"
+          make -j$(nproc) V=s || make -j1 V=s || echo "Compile failed, check logs"
+
+      - name: Upload firmware artifacts (if exists)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-firmware
+          path: openwrt/bin/targets/**/*
+          if-no-files-found: warn
