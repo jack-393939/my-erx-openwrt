@@ -29,8 +29,7 @@ jobs:
             python3 python3-setuptools rsync wget curl file bc time \
             gettext pkg-config libelf-dev libglib2.0-dev \
             libgmp3-dev libmpc-dev libmpfr-dev \
-            patch bzip2 tar xz-utils make gcc g++ ccache \
-            python3-distutils-extra  # 兼容层，如果需要
+            patch bzip2 tar xz-utils make gcc g++ ccache
 
       - name: Clone source code
         run: |
@@ -40,10 +39,7 @@ jobs:
         run: |
           cd openwrt
           if [ -f ../feeds.conf.default ]; then mv ../feeds.conf.default feeds.conf.default; fi
-          if [ -f ../diy-part1.sh ]; then
-            chmod +x ../diy-part1.sh
-            ../diy-part1.sh || echo "diy-part1 failed"
-          fi
+          if [ -f ../diy-part1.sh ]; then chmod +x ../diy-part1.sh && ../diy-part1.sh || echo "diy-part1 failed"; fi
 
       - name: Update and install feeds
         run: |
@@ -56,22 +52,15 @@ jobs:
           cd openwrt
           if [ -f ../.config ]; then mv ../.config .config; fi
           if [ -d ../files ]; then mv ../files files; fi
-          if [ -f ../diy-part2.sh ]; then
-            chmod +x ../diy-part2.sh
-            ../diy-part2.sh || echo "diy-part2 failed"
-          fi
+          if [ -f ../diy-part2.sh ]; then chmod +x ../diy-part2.sh && ../diy-part2.sh || echo "diy-part2 failed"; fi
           make defconfig || echo "defconfig failed"
 
-      - name: Download packages
+      - name: Build packages and image
         run: |
           cd openwrt
-          make download -j8 || make download -j1 || echo "download failed"
-
-      - name: Compile firmware
-        run: |
-          cd openwrt
-          echo "Compiling with $(nproc) threads"
-          make -j$(nproc) V=s || make -j1 V=s || echo "Compilation failed, check logs"
+          make -j4 package/compile V=s || make -j1 package/compile V=s
+          make -j4 target/install V=s || make -j1 target/install V=s
+          make -j4 image V=s || make -j1 image V=s DEBUG=1
 
       - name: Upload firmware artifacts (if any)
         if: always()
@@ -79,4 +68,12 @@ jobs:
         with:
           name: openwrt-firmware
           path: openwrt/bin/targets/**/*
+          if-no-files-found: warn
+
+      - name: Upload build logs for debug
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: openwrt/logs/**/*
           if-no-files-found: warn
