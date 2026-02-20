@@ -29,34 +29,32 @@ jobs:
             python3 python3-setuptools rsync wget curl file bc time \
             gettext pkg-config libelf-dev libglib2.0-dev \
             libgmp3-dev libmpc-dev libmpfr-dev \
-            patch bzip2 tar xz-utils make gcc g++ ccache ninja-build
+            patch bzip2 tar xz-utils make gcc g++ ccache \
+            cmake ninja-build libdeflate-dev libzstd-dev
 
       - name: Clone source code
         run: |
-          mkdir -p openwrt
+          pwd
+          ls -la
+          git clone --depth=1 --branch $REPO_BRANCH $REPO_URL openwrt || { echo "git clone failed"; exit 1; }
           cd openwrt
-          git clone --depth=1 --branch $REPO_BRANCH $REPO_URL . || { echo "git clone failed"; exit 1; }
           pwd
           ls -la
 
-      - name: Build host tools and toolchain first
+      - name: Build host tools and toolchain (critical)
         run: |
           cd openwrt
-          echo "Current directory: $(pwd)"
-          ls -la
-          make tools/install -j1 V=s DEBUG=1 || { echo "tools/install failed with code $?"; exit 1; }
-          make toolchain/install -j1 V=s DEBUG=1 || { echo "toolchain/install failed with code $?"; exit 1; }
-          ls -la staging_dir/host/bin/  # 检查 libdeflate-gzip 是否生成
-          which libdeflate-gzip || echo "libdeflate-gzip not found"
+          echo "Building host tools..."
+          make tools/install -j1 V=s DEBUG=1 || { echo "tools/install failed with code $?"; tail -n 50 logs/*; exit 1; }
+          echo "Building toolchain..."
+          make toolchain/install -j1 V=s DEBUG=1 || { echo "toolchain/install failed with code $?"; tail -n 50 logs/*; exit 1; }
+          ls -la staging_dir/host/bin/ | grep -E "libdeflate-gzip|ninja" || echo "Key tools missing!"
 
       - name: Load custom feeds and diy-part1
         run: |
           cd openwrt
           if [ -f ../feeds.conf.default ]; then mv ../feeds.conf.default feeds.conf.default; fi
-          if [ -f ../diy-part1.sh ]; then
-            chmod +x ../diy-part1.sh
-            ../diy-part1.sh || echo "diy-part1 failed"
-          fi
+          if [ -f ../diy-part1.sh ]; then chmod +x ../diy-part1.sh && ../diy-part1.sh || echo "diy-part1 failed"; fi
 
       - name: Update and install feeds
         run: |
@@ -69,10 +67,7 @@ jobs:
           cd openwrt
           if [ -f ../.config ]; then mv ../.config .config; fi
           if [ -d ../files ]; then mv ../files files; fi
-          if [ -f ../diy-part2.sh ]; then
-            chmod +x ../diy-part2.sh
-            ../diy-part2.sh || echo "diy-part2 failed"
-          fi
+          if [ -f ../diy-part2.sh ]; then chmod +x ../diy-part2.sh && ../diy-part2.sh || echo "diy-part2 failed"; fi
           make defconfig || echo "defconfig failed"
 
       - name: Build packages and image
@@ -90,7 +85,7 @@ jobs:
           path: openwrt/bin/targets/**/*
           if-no-files-found: warn
 
-      - name: Upload build logs for debug
+      - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
