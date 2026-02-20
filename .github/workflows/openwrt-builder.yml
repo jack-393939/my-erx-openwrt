@@ -40,31 +40,38 @@ jobs:
           pwd
           ls -la
 
-      - name: Build host tools first
+      - name: Build host tools and toolchain (critical step)
         run: |
           cd openwrt
-          # 先构建工具链，避免 libdeflate-gzip 等缺失
-          make tools/install -j1 V=s DEBUG=1 || { echo "tools/install failed"; tail -n 50 $(find logs -type f 2>/dev/null || echo "no logs"); exit 1; }
-          make toolchain/install -j1 V=s DEBUG=1 || { echo "toolchain/install failed"; tail -n 50 $(find logs -type f 2>/dev/null || echo "no logs"); exit 1; }
-          ls -la staging_dir/host/bin/ | grep -E "libdeflate-gzip|ninja" || echo "Key host tools missing!"
+          echo "Current directory: $(pwd)"
+          ls -la
+          echo "Building host tools..."
+          make tools/install -j1 V=s DEBUG=1 || { echo "tools/install failed with code $?"; exit 1; }
+          echo "Building toolchain..."
+          make toolchain/install -j1 V=s DEBUG=1 || { echo "toolchain/install failed with code $?"; exit 1; }
+          echo "Checking key host tools:"
+          ls -la staging_dir/host/bin/ | grep -E "libdeflate-gzip|ninja|cmake" || echo "Key tools missing!"
 
       - name: Copy and use existing .config
         run: |
           cd openwrt
           if [ -f ../.config ]; then
             cp ../.config .config
-            echo ".config copied from repository"
+            echo ".config copied successfully"
+            cat .config | grep -E "CONFIG_TARGET_ramips|DEVICE_ubnt_erx"
           else
             echo ".config not found in repository!"
             exit 1
           fi
-          cat .config | grep -E "CONFIG_TARGET_ramips|DEVICE_ubnt_erx" || echo "Target config missing in .config"
 
       - name: Load custom feeds and diy-part1
         run: |
           cd openwrt
           if [ -f ../feeds.conf.default ]; then mv ../feeds.conf.default feeds.conf.default; fi
-          if [ -f ../diy-part1.sh ]; then chmod +x ../diy-part1.sh && ../diy-part1.sh || echo "diy-part1 failed"; fi
+          if [ -f ../diy-part1.sh ]; then
+            chmod +x ../diy-part1.sh
+            ../diy-part1.sh || echo "diy-part1 failed"
+          fi
 
       - name: Update and install feeds
         run: |
@@ -80,7 +87,7 @@ jobs:
           make -j4 target/install V=s || make -j1 target/install V=s
           make -j4 image V=s || make -j1 image V=s DEBUG=1
 
-      - name: Upload firmware artifacts
+      - name: Upload firmware artifacts (if any)
         if: always()
         uses: actions/upload-artifact@v4
         with:
