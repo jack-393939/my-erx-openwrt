@@ -31,9 +31,11 @@ jobs:
             libgmp3-dev libmpc-dev libmpfr-dev \
             patch bzip2 tar xz-utils make gcc g++ ccache
 
-      - name: Clone source code
+      - name: Build host tools first
         run: |
-          git clone --depth=1 --branch $REPO_BRANCH $REPO_URL openwrt
+          cd openwrt
+          make tools/install -j1 V=s || make tools/install -j1 V=s DEBUG=1
+          make toolchain/install -j1 V=s || make toolchain/install -j1 V=s DEBUG=1
 
       - name: Load custom feeds and diy-part1
         run: |
