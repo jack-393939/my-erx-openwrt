@@ -40,29 +40,26 @@ jobs:
           pwd
           ls -la
 
-      - name: Build host tools and toolchain (critical step)
-        run: |
-          cd openwrt
-          echo "Current directory: $(pwd)"
-          ls -la
-          echo "Building host tools..."
-          make tools/install -j1 V=s DEBUG=1 || { echo "tools/install failed with code $?"; exit 1; }
-          echo "Building toolchain..."
-          make toolchain/install -j1 V=s DEBUG=1 || { echo "toolchain/install failed with code $?"; exit 1; }
-          echo "Checking key host tools:"
-          ls -la staging_dir/host/bin/ | grep -E "libdeflate-gzip|ninja|cmake" || echo "Key tools missing!"
-
-      - name: Copy and use existing .config
+      - name: Copy .config early to avoid menuconfig
         run: |
           cd openwrt
           if [ -f ../.config ]; then
             cp ../.config .config
-            echo ".config copied successfully"
-            cat .config | grep -E "CONFIG_TARGET_ramips|DEVICE_ubnt_erx"
+            echo ".config copied early"
+            cat .config | grep CONFIG_TARGET_ramips
           else
-            echo ".config not found in repository!"
+            echo ".config not found!"
             exit 1
           fi
+
+      - name: Build host tools and toolchain
+        run: |
+          cd openwrt
+          echo "Building host tools..."
+          make tools/install -j1 V=s || { echo "tools/install failed with code $?"; exit 1; }
+          echo "Building toolchain..."
+          make toolchain/install -j1 V=s || { echo "toolchain/install failed with code $?"; exit 1; }
+          ls -la staging_dir/host/bin/ | grep -E "libdeflate-gzip|ninja|cmake" || echo "Key tools missing!"
 
       - name: Load custom feeds and diy-part1
         run: |
@@ -87,7 +84,7 @@ jobs:
           make -j4 target/install V=s || make -j1 target/install V=s
           make -j4 image V=s || make -j1 image V=s DEBUG=1
 
-      - name: Upload firmware artifacts (if any)
+      - name: Upload firmware artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
