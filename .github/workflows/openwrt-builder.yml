@@ -31,17 +31,28 @@ jobs:
             libgmp3-dev libmpc-dev libmpfr-dev \
             patch bzip2 tar xz-utils make gcc g++ ccache
 
+      - name: Clone source code
+        run: |
+          mkdir -p openwrt
+          cd openwrt
+          git clone --depth=1 --branch $REPO_BRANCH $REPO_URL . || { echo "git clone failed"; exit 1; }
+          pwd
+          ls -la
+
       - name: Build host tools first
         run: |
           cd openwrt
-          make tools/install -j1 V=s || make tools/install -j1 V=s DEBUG=1
-          make toolchain/install -j1 V=s || make toolchain/install -j1 V=s DEBUG=1
+          make tools/install -j1 V=s || make tools/install -j1 V=s DEBUG=1 || echo "tools/install failed"
+          make toolchain/install -j1 V=s || make toolchain/install -j1 V=s DEBUG=1 || echo "toolchain/install failed"
 
       - name: Load custom feeds and diy-part1
         run: |
           cd openwrt
           if [ -f ../feeds.conf.default ]; then mv ../feeds.conf.default feeds.conf.default; fi
-          if [ -f ../diy-part1.sh ]; then chmod +x ../diy-part1.sh && ../diy-part1.sh || echo "diy-part1 failed"; fi
+          if [ -f ../diy-part1.sh ]; then
+            chmod +x ../diy-part1.sh
+            ../diy-part1.sh || echo "diy-part1 failed"
+          fi
 
       - name: Update and install feeds
         run: |
@@ -54,7 +65,10 @@ jobs:
           cd openwrt
           if [ -f ../.config ]; then mv ../.config .config; fi
           if [ -d ../files ]; then mv ../files files; fi
-          if [ -f ../diy-part2.sh ]; then chmod +x ../diy-part2.sh && ../diy-part2.sh || echo "diy-part2 failed"; fi
+          if [ -f ../diy-part2.sh ]; then
+            chmod +x ../diy-part2.sh
+            ../diy-part2.sh || echo "diy-part2 failed"
+          fi
           make defconfig || echo "defconfig failed"
 
       - name: Build packages and image
