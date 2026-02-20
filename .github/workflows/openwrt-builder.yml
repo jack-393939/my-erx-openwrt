@@ -29,7 +29,7 @@ jobs:
             python3 python3-setuptools rsync wget curl file bc time \
             gettext pkg-config libelf-dev libglib2.0-dev \
             libgmp3-dev libmpc-dev libmpfr-dev \
-            patch bzip2 tar xz-utils make gcc g++ ccache
+            patch bzip2 tar xz-utils make gcc g++ ccache ninja-build
 
       - name: Clone source code
         run: |
@@ -39,11 +39,15 @@ jobs:
           pwd
           ls -la
 
-      - name: Build host tools first
+      - name: Build host tools and toolchain first
         run: |
           cd openwrt
-          make tools/install -j1 V=s || make tools/install -j1 V=s DEBUG=1 || echo "tools/install failed"
-          make toolchain/install -j1 V=s || make toolchain/install -j1 V=s DEBUG=1 || echo "toolchain/install failed"
+          echo "Current directory: $(pwd)"
+          ls -la
+          make tools/install -j1 V=s DEBUG=1 || { echo "tools/install failed with code $?"; exit 1; }
+          make toolchain/install -j1 V=s DEBUG=1 || { echo "toolchain/install failed with code $?"; exit 1; }
+          ls -la staging_dir/host/bin/  # 检查 libdeflate-gzip 是否生成
+          which libdeflate-gzip || echo "libdeflate-gzip not found"
 
       - name: Load custom feeds and diy-part1
         run: |
