@@ -34,21 +34,31 @@ jobs:
 
       - name: Clone source code
         run: |
-          pwd
-          ls -la
-          git clone --depth=1 --branch $REPO_BRANCH $REPO_URL openwrt || { echo "git clone failed"; exit 1; }
+          mkdir -p openwrt
           cd openwrt
+          git clone --depth=1 --branch $REPO_BRANCH $REPO_URL . || { echo "git clone failed"; exit 1; }
           pwd
           ls -la
 
-      - name: Build host tools and toolchain (critical)
+      - name: Build host tools first
         run: |
           cd openwrt
-          echo "Building host tools..."
-          make tools/install -j1 V=s DEBUG=1 || { echo "tools/install failed with code $?"; tail -n 50 logs/*; exit 1; }
-          echo "Building toolchain..."
-          make toolchain/install -j1 V=s DEBUG=1 || { echo "toolchain/install failed with code $?"; tail -n 50 logs/*; exit 1; }
-          ls -la staging_dir/host/bin/ | grep -E "libdeflate-gzip|ninja" || echo "Key tools missing!"
+          # 先构建工具链，避免 libdeflate-gzip 等缺失
+          make tools/install -j1 V=s DEBUG=1 || { echo "tools/install failed"; tail -n 50 $(find logs -type f 2>/dev/null || echo "no logs"); exit 1; }
+          make toolchain/install -j1 V=s DEBUG=1 || { echo "toolchain/install failed"; tail -n 50 $(find logs -type f 2>/dev/null || echo "no logs"); exit 1; }
+          ls -la staging_dir/host/bin/ | grep -E "libdeflate-gzip|ninja" || echo "Key host tools missing!"
+
+      - name: Copy and use existing .config
+        run: |
+          cd openwrt
+          if [ -f ../.config ]; then
+            cp ../.config .config
+            echo ".config copied from repository"
+          else
+            echo ".config not found in repository!"
+            exit 1
+          fi
+          cat .config | grep -E "CONFIG_TARGET_ramips|DEVICE_ubnt_erx" || echo "Target config missing in .config"
 
       - name: Load custom feeds and diy-part1
         run: |
@@ -62,22 +72,15 @@ jobs:
           ./scripts/feeds update -a || echo "feeds update failed"
           ./scripts/feeds install -a || echo "feeds install failed"
 
-      - name: Load custom configuration and diy-part2
+      - name: Apply configuration and build
         run: |
           cd openwrt
-          if [ -f ../.config ]; then mv ../.config .config; fi
-          if [ -d ../files ]; then mv ../files files; fi
-          if [ -f ../diy-part2.sh ]; then chmod +x ../diy-part2.sh && ../diy-part2.sh || echo "diy-part2 failed"; fi
-          make defconfig || echo "defconfig failed"
-
-      - name: Build packages and image
-        run: |
-          cd openwrt
+          make defconfig || { echo "defconfig failed"; exit 1; }
           make -j4 package/compile V=s || make -j1 package/compile V=s
           make -j4 target/install V=s || make -j1 target/install V=s
           make -j4 image V=s || make -j1 image V=s DEBUG=1
 
-      - name: Upload firmware artifacts (if any)
+      - name: Upload firmware artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
